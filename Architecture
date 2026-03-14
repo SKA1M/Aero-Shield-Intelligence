@@ -1,0 +1,35 @@
+# Technical Architecture: Aero Shield v1.7.1 Intelligence Platform
+
+This document outlines the engineering logic and mathematical frameworks behind the Aero Shield data engine. The platform transitions from raw environmental sensing to predictive biomedical impact modeling.
+
+---
+
+## 1. Data Harvesting & Modernization (The V3 Transition)
+The foundation of the platform is a multi-threaded discovery engine designed for the **OpenAQ v3 API**. Unlike legacy systems that rely on cached data, this engine uses a "Live Pulse" harvesting strategy to secure verified **March 2026** measurements.
+
+* **Real-Time Verification:** The pipeline enforces a strict temporal gatekeeper, discarding any sensor metadata that does not contain a validated `2026-03` timestamp.
+* **Full Spectrum Monitoring:** Beyond $PM_{2.5}$, the system captures a complete chemical profile including $NO_2$, $O_3$, and $PM_{10}$ to provide a holistic view of the urban atmospheric environment.
+
+## 2. The Atmospheric Intelligence Layer (Environmental Physics)
+To move from "ambient air quality" to "worker exposure," the platform integrates three distinct geospatial signals:
+
+* **The Ventilation Index:** By merging OpenWeather barometric pressure and wind vectors, the model calculates the **Atmospheric Mixing Height**. This identifies the "Invisible Ceiling" effect where stagnant air traps pollutants at the breathing level of outdoor workers.
+* **Urban Morphology:** Using the **Street Aspect Ratio** and **Population Density**, the system models "Urban Canyons"—physical street configurations that concentrate tailpipe emissions.
+* **Pro Mobility Data:** Integration with **TomTom Pro Traffic** provides the **Functional Road Class (FRC)**. This allows the model to apply a "Source Penalty" to arterial roads (FRC1/2), accounting for the higher diesel-soot concentration experienced by workers in high-traffic corridors.
+
+## 3. The Biomedical Impact Engine (Cigarette Equivalence)
+The project’s core innovation is the translation of raw $\mu g/m^3$ data into a human-centric health narrative.
+
+* **Active Worker Persona:** The model replaces "resting adult" assumptions with an **Active Rider Persona** ($25 L/min$ breathing rate), reflecting the $3\times$ higher lung intake of delivery riders and street vendors.
+* **Berkeley Earth Logic:** The system applies a validated conversion factor ($22 \mu g/m^3 \approx 1$ cigarette) to calculate the **Shift Cigarette Equivalence**.
+* **Hardware Grounding:** In an industry-leading move toward technical honesty, the platform models the **Aero Shield v1.7.1** impact based on a realistic **32.5% reduction** (E11 Pleated Filter efficiency minus Total Inward Leakage).
+
+## 4. Market Strategic Conclusion (The TAM Index)
+The final output is an **Executive Launch Dashboard** that ranks cities by the **Aero Shield TAM Index**. 
+
+$$TAM_{Index} = \frac{OWPEI \times Population Density}{1000}$$
+
+By identifying high-ROI launch sites like **Vikas Sadan, Gurugram**, where extreme pollution peaks exceed $300 \mu g/m^3$, the data identifies the most significant opportunities for hardware-driven health intervention.
+
+---
+**Designed and Engineered by [YOUR NAME]** *Lead Data Architect, Aero Shield Project*
