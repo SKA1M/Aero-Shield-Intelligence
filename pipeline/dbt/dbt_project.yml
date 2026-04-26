@@ -1,0 +1,40 @@
+name: aero_shield
+version: '1.8.0'
+config-version: 2
+
+profile: aero_shield
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  aero_shield:
+    staging:
+      +materialized: view
+      +schema: staging
+    marts:
+      +materialized: table
+      +schema: analytics
+      +tags: ["production"]
+
+vars:
+  # Default run date overridden by Airflow via --vars flag
+  run_date: '{{ run_started_at.strftime("%Y-%m-%d") }}'
+
+  # Filter efficiency for Aero Shield v1.7.1 E11 Pleated Filter
+  filter_efficiency: 0.325
+
+  # Berkeley Earth cigarette conversion constant
+  cigarette_pm25_factor: 22.0
+
+  # Active worker breathing rate (25 L/min)
+  breathing_rate_m3_hr: 1.5

@@ -1,0 +1,236 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Aero Shield v1.8 — Environmental Health Intelligence Platform
+  Deploys the end-to-end AWS data pipeline: Lambda ingestion,
+  S3 storage (raw + curated), Glue transformation, and Redshift-compatible
+  outputs. Engineered by Sunil Kaimootil.
+
+# ---------------------------------------------------------------------------
+# Parameters
+# ---------------------------------------------------------------------------
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Deployment environment
+
+  OpenAQApiKey:
+    Type: String
+    NoEcho: true
+    Description: OpenAQ v3 API key (store in Parameter Store or Secrets Manager)
+
+  WeatherApiKey:
+    Type: String
+    NoEcho: true
+    Description: OpenWeatherMap API key
+
+  TomTomApiKey:
+    Type: String
+    NoEcho: true
+    Description: TomTom Pro Traffic API key
+
+  NotificationEmail:
+    Type: String
+    Default: sunil@example.com
+    Description: Email for pipeline failure alerts
+
+# ---------------------------------------------------------------------------
+# Globals
+# ---------------------------------------------------------------------------
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 300
+    MemorySize: 512
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref EnvironmentName
+    Tags:
+      Project: AeroShield
+      Owner: SunilKaimootil
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+Resources:
+
+  # ── S3: Raw Zone ─────────────────────────────────────────────────────────
+  RawDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "aero-shield-raw-zone-${EnvironmentName}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToGlacier
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+
+  # ── S3: Curated Zone ─────────────────────────────────────────────────────
+  CuratedDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "aero-shield-curated-zone-${EnvironmentName}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  # ── Lambda: Ingestion Function ───────────────────────────────────────────
+  IngestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "aero-shield-ingestion-${EnvironmentName}"
+      CodeUri: ../pipeline/ingestion/
+      Handler: lambda_handler.lambda_handler
+      Description: Harvests OpenAQ/OpenWeather/TomTom data into S3 raw zone
+      Environment:
+        Variables:
+          S3_RAW_BUCKET: !Ref RawDataBucket
+          OPENAQ_API_KEY: !Ref OpenAQApiKey
+          WEATHER_API_KEY: !Ref WeatherApiKey
+          TOMTOM_API_KEY: !Ref TomTomApiKey
+      Policies:
+        - S3WritePolicy:
+            BucketName: !Ref RawDataBucket
+        - CloudWatchLogsFullAccess
+      Events:
+        HourlyPeakSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 6-20 * * ? *)
+            Name: !Sub "aero-shield-hourly-${EnvironmentName}"
+            Description: Trigger ingestion hourly during peak pollution hours
+
+  # ── Glue: Transformation Job ─────────────────────────────────────────────
+  GlueTransformationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "aero-shield-glue-role-${EnvironmentName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: S3AccessForGlue
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                  - s3:DeleteObject
+                Resource:
+                  - !GetAtt RawDataBucket.Arn
+                  - !Sub "${RawDataBucket.Arn}/*"
+                  - !GetAtt CuratedDataBucket.Arn
+                  - !Sub "${CuratedDataBucket.Arn}/*"
+
+  GlueTransformationJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: !Sub "aero-shield-transformation-${EnvironmentName}"
+      Role: !GetAtt GlueTransformationRole.Arn
+      Command:
+        Name: glueetl
+        PythonVersion: "3"
+        ScriptLocation: !Sub "s3://${CuratedDataBucket}/scripts/glue_transform.py"
+      GlueVersion: "4.0"
+      WorkerType: G.1X
+      NumberOfWorkers: 3
+      MaxRetries: 1
+      Timeout: 60
+      DefaultArguments:
+        "--enable-metrics": "true"
+        "--enable-continuous-cloudwatch-log": "true"
+        "--job-language": "python"
+        "--raw_bucket": !Ref RawDataBucket
+        "--curated_bucket": !Ref CuratedDataBucket
+
+  # ── SNS: Pipeline Alerts ─────────────────────────────────────────────────
+  PipelineAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "aero-shield-alerts-${EnvironmentName}"
+      DisplayName: Aero Shield Pipeline Alerts
+      Subscription:
+        - Endpoint: !Ref NotificationEmail
+          Protocol: email
+
+  # ── CloudWatch: Alarm on Lambda Errors ───────────────────────────────────
+  IngestionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "aero-shield-ingestion-errors-${EnvironmentName}"
+      AlarmDescription: Triggers when the ingestion Lambda fails
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref IngestionFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref PipelineAlertTopic
+      TreatMissingData: notBreaching
+
+# ---------------------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------------------
+Outputs:
+  RawBucketName:
+    Description: S3 bucket for raw API data
+    Value: !Ref RawDataBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-RawBucket"
+
+  CuratedBucketName:
+    Description: S3 bucket for curated Parquet data
+    Value: !Ref CuratedDataBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-CuratedBucket"
+
+  IngestionFunctionArn:
+    Description: ARN of the ingestion Lambda (reference from Airflow)
+    Value: !GetAtt IngestionFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-IngestionFunctionArn"
+
+  GlueJobName:
+    Description: Name of the Glue transformation job
+    Value: !Ref GlueTransformationJob
+    Export:
+      Name: !Sub "${AWS::StackName}-GlueJob"
+
+  AlertTopicArn:
+    Description: SNS topic for pipeline alerts
+    Value: !Ref PipelineAlertTopic

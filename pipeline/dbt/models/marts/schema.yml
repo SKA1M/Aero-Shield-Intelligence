@@ -1,0 +1,57 @@
+version: 2
+
+models:
+  - name: mart_worker_exposure
+    description: |
+      Final analytics table with biomedical impact scores per monitoring site per day.
+      Powers the Streamlit executive dashboard and downstream reporting.
+    columns:
+      - name: location_name
+        description: "OpenAQ site name"
+        tests:
+          - not_null
+
+      - name: pm25_ug_m3
+        description: "Ambient PM2.5 concentration (ug/m3)"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1000
+
+      - name: shift_cigarette_equiv
+        description: "Cigarette-equivalents per 8-hour shift"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 50
+
+      - name: cigs_prevented_per_shift
+        description: "Cigarette-equivalents prevented by Aero Shield filter per shift"
+        tests:
+          - not_null
+
+      - name: aero_shield_tam_index
+        description: "Market priority index (OWPEI x population density / 1000)"
+        tests:
+          - not_null
+
+      - name: toxic_status
+        description: "Binary classification vs WHO PM2.5 guideline (15 ug/m3)"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['TOXIC', 'SAFE']
+
+      - name: risk_tier
+        description: "Human-readable risk tier"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Low Risk', 'Moderate Risk', 'High Risk', 'Extreme Risk', 'Critical Risk']
+
+      - name: road_type
+        tests:
+          - accepted_values:
+              values: ['FRC1', 'FRC2', 'FRC3', 'FRC4', 'FRC5', 'FRC6', 'FRC7', 'N/A']

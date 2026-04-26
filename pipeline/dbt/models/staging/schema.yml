@@ -1,0 +1,38 @@
+version: 2
+
+sources:
+  - name: curated
+    description: "Curated Parquet tables from S3, loaded via Redshift Spectrum"
+    schema: curated
+    tables:
+      - name: worker_exposure_raw
+        description: "Raw joined air quality + weather + traffic + morphology per site per hour"
+
+models:
+  - name: stg_pollution_readings
+    description: "Cleaned and typed pollution + environmental data, one row per site per run"
+    columns:
+      - name: location_name
+        description: "OpenAQ monitoring station name"
+        tests:
+          - not_null
+      - name: pm25_ug_m3
+        description: "PM2.5 concentration in micrograms per cubic metre"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1000
+      - name: ventilation_index
+        description: "Calculated Ventilation Index (wind_speed x mixing_height)"
+        tests:
+          - not_null
+      - name: road_type
+        description: "TomTom Functional Road Class (FRC1-FRC7)"
+        tests:
+          - accepted_values:
+              values: ['FRC1', 'FRC2', 'FRC3', 'FRC4', 'FRC5', 'FRC6', 'FRC7', 'N/A']
+      - name: pipeline_run_date
+        description: "Date of the Airflow pipeline run that produced this row"
+        tests:
+          - not_null
